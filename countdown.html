@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Contagem Regressiva — Amanhã às 12:00</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#06b6d4; --muted:#93c5fd;
+      --glass: rgba(255,255,255,0.03);
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:linear-gradient(180deg,var(--bg),#071029); color:#e6eef8; display:flex; align-items:center; justify-content:center; padding:24px; overflow:hidden;
+    }
+    .card{
+      width:100%; max-width:720px; background:linear-gradient(180deg,var(--card), rgba(11,18,32,0.8)); border-radius:16px; padding:28px; box-shadow:0 10px 30px rgba(2,6,23,0.6);
+      border:1px solid rgba(255,255,255,0.03);
+      transition: all 0.6s ease;
+      position:relative;
+      z-index:1;
+    }
+    .finished{
+      background:linear-gradient(180deg,#14532d,#166534) !important;
+      color:#f0fdf4;
+      border:1px solid rgba(255,255,255,0.1);
+      box-shadow:0 0 30px rgba(34,197,94,0.6);
+    }
+    header{display:flex; align-items:center; gap:16px; margin-bottom:18px}
+    .logo{
+      width:56px; height:56px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#7c3aed); display:flex; align-items:center; justify-content:center; font-weight:700;
+      font-size:18px; color:#021024; box-shadow:0 6px 18px rgba(6,182,212,0.12);
+    }
+    h1{margin:0; font-size:20px}
+    p.lead{margin:0; color:var(--muted); font-size:13px}
+
+    .countdown{
+      display:flex; gap:12px; margin-top:18px; justify-content:center; flex-wrap:wrap;
+    }
+    .unit{
+      background:var(--glass); padding:18px 16px; border-radius:12px; min-width:110px; text-align:center; border:1px solid rgba(255,255,255,0.02);
+    }
+    .value{font-size:34px; font-weight:700; line-height:1}
+    .label{font-size:12px; color:var(--muted); margin-top:6px}
+
+    .meta{display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:12px}
+    .target{font-size:13px; color:var(--muted)}
+    .controls{display:flex; gap:8px}
+    button{background:transparent; border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:10px; color:inherit; cursor:pointer}
+    button.primary{background:linear-gradient(90deg,var(--accent),#7c3aed); color:#021024; border:none}
+
+    @media (max-width:480px){
+      .unit{min-width:80px;padding:12px}
+      .value{font-size:26px}
+    }
+
+    footer{margin-top:18px; font-size:12px; color:var(--muted); text-align:center}
+
+    /* Canvas de confete ocupa a tela toda */
+    #confettiCanvas{
+      position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:999;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="confettiCanvas"></canvas>
+  <main class="card" role="main" id="card">
+    <header>
+      <div class="logo">12</div>
+      <div>
+        <h1>Contagem regressiva — Início das FÉRIAS</h1>
+        <p class="lead">Mostra o tempo restante até o <b>início das férias</b> no fuso horário local.</p>
+      </div>
+    </header>
+
+    <section aria-live="polite">
+      <div class="countdown" id="countdown">
+        <div class="unit">
+          <div class="value" id="days">0</div>
+          <div class="label">Dias</div>
+        </div>
+        <div class="unit">
+          <div class="value" id="hours">0</div>
+          <div class="label">Horas</div>
+        </div>
+        <div class="unit">
+          <div class="value" id="minutes">0</div>
+          <div class="label">Minutos</div>
+        </div>
+        <div class="unit">
+          <div class="value" id="seconds">0</div>
+          <div class="label">Segundos</div>
+        </div>
+      </div>
+
+      <div class="meta">
+        <div class="target" id="targetText">Alvo: —</div>
+        <div class="controls">
+          <button id="refreshBtn" title="Recalcular agora">Recalcular</button>
+          <button id="copyBtn" class="primary" title="Copiar link de tempo ISO">Copiar ISO</button>
+        </div>
+      </div>
+    </section>
+
+    <footer id="message">Atualizando…</footer>
+  </main>
+
+  <script>
+    const daysEl = document.getElementById('days');
+    const hoursEl = document.getElementById('hours');
+    const minutesEl = document.getElementById('minutes');
+    const secondsEl = document.getElementById('seconds');
+    const targetText = document.getElementById('targetText');
+    const message = document.getElementById('message');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const card = document.getElementById('card');
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const ctx = confettiCanvas.getContext('2d');
+
+    function resizeCanvas(){
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let confettiParticles = [];
+
+    function startConfetti(){
+      confettiParticles = Array.from({length:150}).map(()=>({
+        x: Math.random()*confettiCanvas.width,
+        y: Math.random()*confettiCanvas.height - confettiCanvas.height,
+        r: Math.random()*6+4,
+        d: Math.random()*10+5,
+        color:`hsl(${Math.random()*360},100%,50%)`,
+        tilt: Math.random()*10-10
+      }));
+      requestAnimationFrame(drawConfetti);
+    }
+
+    function drawConfetti(){
+      ctx.clearRect(0,0,confettiCanvas.width, confettiCanvas.height);
+      confettiParticles.forEach(p=>{
+        ctx.beginPath();
+        ctx.fillStyle = p.color;
+        ctx.ellipse(p.x, p.y, p.r, p.r/2, p.tilt, 0, Math.PI*2);
+        ctx.fill();
+      });
+      updateConfetti();
+      if(confettiParticles.length>0){
+        requestAnimationFrame(drawConfetti);
+      }
+    }
+
+    function updateConfetti(){
+      confettiParticles.forEach(p=>{
+        p.y += p.d*0.5;
+        p.x += Math.sin(p.y*0.01)*2;
+      });
+      confettiParticles = confettiParticles.filter(p=>p.y < confettiCanvas.height+20);
+    }
+
+    function getTomorrowNoon(){
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12, 0, 0, 0);
+    }
+
+    let target = getTomorrowNoon();
+
+    function updateTargetText(){
+      targetText.textContent = `Alvo: ${target.toLocaleString(undefined, {weekday:'short', day:'2-digit', month:'short', year:'numeric'})} às ${target.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+    }
+
+    function updateCountdown(){
+      const now = new Date();
+      let diff = target - now;
+
+      if (diff <= 0){
+        daysEl.textContent = '0';
+        hoursEl.textContent = '0';
+        minutesEl.textContent = '0';
+        secondsEl.textContent = '0';
+        message.textContent = '🎉 O prazo foi atingido!';
+        card.classList.add('finished');
+        clearInterval(window._countdownInterval);
+        startConfetti();
+        return;
+      }
+
+      const sec = Math.floor(diff / 1000);
+      const days = Math.floor(sec / 86400);
+      const hours = Math.floor((sec % 86400) / 3600);
+      const minutes = Math.floor((sec % 3600) / 60);
+      const seconds = sec % 60;
+
+      daysEl.textContent = String(days);
+      hoursEl.textContent = String(hours).padStart(2,'0');
+      minutesEl.textContent = String(minutes).padStart(2,'0');
+      secondsEl.textContent = String(seconds).padStart(2,'0');
+
+      message.textContent = `Faltam ${days} dias, ${hours} horas, ${minutes} minutos e ${seconds} segundos.`;
+    }
+
+    function start(){
+      target = getTomorrowNoon();
+      updateTargetText();
+      updateCountdown();
+      if (window._countdownInterval) clearInterval(window._countdownInterval);
+      window._countdownInterval = setInterval(updateCountdown, 1000);
+    }
+
+    refreshBtn.addEventListener('click', () => {
+      start();
+      refreshBtn.textContent = 'Atualizado';
+      setTimeout(()=> refreshBtn.textContent = 'Recalcular', 900);
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      try{
+        const iso = target.toISOString();
+        await navigator.clipboard.writeText(iso);
+        copyBtn.textContent = 'Copiado!';
+        setTimeout(()=> copyBtn.textContent = 'Copiar ISO', 1000);
+      }catch(e){
+        const iso = target.toString();
+        prompt('Copie a data-alvo (formato local):', iso);
+      }
+    });
+
+    start();
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) start();
+    });
+  </script>
+</body>
+</html>
